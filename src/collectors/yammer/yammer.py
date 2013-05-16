@@ -50,7 +50,7 @@ class YammerCollector(diamond.collector.Collector):
             self.log.error('Unable to import json')
             return {}
         try:
-            if username:
+            if self.config['username']:
                 passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
                 passman.add_password(None, self.config['url'], self.config['username'], self.config['password'])
                 urllib2.install_opener(urllib2.build_opener(urllib2.HTTPBasicAuthHandler(passman)))
