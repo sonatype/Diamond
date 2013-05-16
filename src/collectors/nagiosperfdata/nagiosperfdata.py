@@ -41,7 +41,6 @@ class NagiosPerfdataCollector(diamond.collector.Collector):
     def get_default_config(self):
         config = super(NagiosPerfdataCollector, self).get_default_config()
         config.update({
-            'enabled': 'True',
             'path': 'nagiosperfdata',
             'perfdata_dir': '/var/spool/diamond/nagiosperfdata',
             'method': 'Threaded'
