@@ -40,50 +40,84 @@ def get_hostname(config, method=None):
     # case insensitive method
     method = method.lower()
 
+    if method in get_hostname.cached_results:
+        return get_hostname.cached_results[method]
+
     if method == 'smart':
         hostname = get_hostname(config, 'fqdn_short')
         if hostname != 'localhost':
+            get_hostname.cached_results[method] = hostname
             return hostname
         hostname = get_hostname(config, 'hostname_short')
+        get_hostname.cached_results[method] = hostname
         return hostname
 
     if method == 'fqdn_short':
-        return socket.getfqdn().split('.')[0]
+        hostname = socket.getfqdn().split('.')[0]
+        get_hostname.cached_results[method] = hostname
+        return hostname
 
     if method == 'fqdn':
-        return socket.getfqdn().replace('.', '_')
+        hostname = socket.getfqdn().replace('.', '_')
+        get_hostname.cached_results[method] = hostname
+        return hostname
 
     if method == 'fqdn_rev':
         hostname = socket.getfqdn().split('.')
         hostname.reverse()
         hostname = '.'.join(hostname)
+        get_hostname.cached_results[method] = hostname
         return hostname
 
     if method == 'uname_short':
-        return os.uname()[1].split('.')[0]
+        hostname = os.uname()[1].split('.')[0]
+        get_hostname.cached_results[method] = hostname
+        return hostname
 
     if method == 'uname_rev':
         hostname = os.uname()[1].split('.')
         hostname.reverse()
         hostname = '.'.join(hostname)
+        get_hostname.cached_results[method] = hostname
         return hostname
 
     if method == 'hostname':
-        return socket.gethostname()
+        hostname = socket.gethostname()
+        get_hostname.cached_results[method] = hostname
+        return hostname
 
     if method == 'hostname_short':
-        return socket.gethostname().split('.')[0]
+        hostname = socket.gethostname().split('.')[0]
+        get_hostname.cached_results[method] = hostname
+        return hostname
 
     if method == 'hostname_rev':
         hostname = socket.gethostname().split('.')
         hostname.reverse()
         hostname = '.'.join(hostname)
+        get_hostname.cached_results[method] = hostname
         return hostname
 
     if method == 'none':
+        get_hostname.cached_results[method] = None
         return None
 
     raise NotImplementedError(config['hostname_method'])
+
+get_hostname.cached_results = {}
+
+
+def str_to_bool(value):
+    """
+    Converts string ('true', 'false') to bool
+    """
+    if isinstance(value, basestring):
+        if value.strip().lower() == 'true':
+            return True
+        else:
+            return False
+
+    return value
 
 
 class Collector(object):
@@ -132,11 +166,12 @@ class Collector(object):
         if isinstance(self.config['byte_unit'], basestring):
             self.config['byte_unit'] = self.config['byte_unit'].split()
 
-        if isinstance(self.config['enabled'], basestring):
-            if self.config['enabled'].strip().lower() == 'true':
-                self.config['enabled'] = True
-            else:
-                self.config['enabled'] = False
+        self.config['enabled'] = str_to_bool(self.config['enabled'])
+
+        self.config['measure_collector_time'] = str_to_bool(
+            self.config['measure_collector_time'])
+
+        self.collect_running = False
 
     def get_default_config_help(self):
         """
@@ -174,6 +209,9 @@ class Collector(object):
 
             # Path Prefix
             'path_prefix': 'servers',
+
+            # Path Prefix for Virtual Machine metrics
+            'instance_prefix': 'instances',
 
             # Path Suffix
             'path_suffix': '',
@@ -221,10 +259,28 @@ class Collector(object):
                                           int(self.config['splay']),
                                           int(self.config['interval']))}
 
-    def get_metric_path(self, name):
+    def get_metric_path(self, name, instance=None):
         """
-        Get metric path
+        Get metric path.
+        Instance indicates that this is a metric for a
+            virtual machine and should have a different
+            root prefix.
         """
+        if 'path' in self.config:
+            path = self.config['path']
+        else:
+            path = self.__class__.__name__
+
+        if instance is not None:
+            if 'instance_prefix' in self.config:
+                prefix = self.config['instance_prefix']
+            else:
+                prefix = 'instances'
+            if path == '.':
+                return '.'.join([prefix, instance, name])
+            else:
+                return '.'.join([prefix, instance, path, name])
+
         if 'path_prefix' in self.config:
             prefix = self.config['path_prefix']
         else:
@@ -246,11 +302,6 @@ class Collector(object):
         if suffix:
             prefix = '.'.join((prefix, suffix))
 
-        if 'path' in self.config:
-            path = self.config['path']
-        else:
-            path = self.__class__.__name__
-
         if path == '.':
             return '.'.join([prefix, name])
         else:
@@ -265,15 +316,18 @@ class Collector(object):
         """
         raise NotImplementedError()
 
-    def publish(self, name, value, precision=0):
+    def publish(self, name, value, raw_value=None, precision=0,
+                metric_type='GAUGE', instance=None):
         """
         Publish a metric with the given name
         """
         # Get metric Path
-        path = self.get_metric_path(name)
+        path = self.get_metric_path(name, instance=instance)
 
         # Create Metric
-        metric = Metric(path, value, None, precision, host=self.get_hostname())
+        metric = Metric(path, value, raw_value=raw_value, timestamp=None,
+                        precision=precision, host=self.get_hostname(),
+                        metric_type=metric_type)
 
         # Publish Metric
         self.publish_metric(metric)
@@ -286,13 +340,30 @@ class Collector(object):
         for handler in self.handlers:
             handler._process(metric)
 
+    def publish_gauge(self, name, value, precision=0, instance=None):
+        return self.publish(name, value, precision=precision,
+                            metric_type='GAUGE', instance=instance)
+
+    def publish_counter(self, name, value, precision=0, max_value=0,
+                      time_delta=True, interval=None, allow_negative=False,
+                      instance=None):
+        raw_value = value
+        value = self.derivative(name, value, max_value=max_value,
+                                time_delta=time_delta, interval=interval,
+                                allow_negative=allow_negative,
+                                instance=instance)
+        return self.publish(name, value, raw_value=raw_value,
+                            precision=precision, metric_type='COUNTER',
+                            instance=instance)
+
     def derivative(self, name, new, max_value=0,
-                   time_delta=True, interval=None):
+                   time_delta=True, interval=None,
+                   allow_negative=False, instance=None):
         """
         Calculate the derivative of the metric.
         """
         # Format Metric Path
-        path = self.get_metric_path(name)
+        path = self.get_metric_path(name, instance=instance)
 
         if path in self.last_values:
             old = self.last_values[path]
@@ -313,6 +384,8 @@ class Collector(object):
                 derivative_y = 1
 
             result = float(derivative_x) / float(derivative_y)
+            if result < 0 and not allow_negative:
+                result = 0
         else:
             result = 0
 
@@ -324,13 +397,16 @@ class Collector(object):
 
     def _run(self):
         """
-        Run the collector
+        Run the collector unless it's already running
         """
+        if self.collect_running:
+            return
         # Log
         self.log.debug("Collecting data from: %s" % self.__class__.__name__)
         try:
             try:
                 start_time = time.time()
+                self.collect_running = True
 
                 # Collect Data
                 self.collect()
@@ -347,7 +423,8 @@ class Collector(object):
                 # Log Error
                 self.log.error(traceback.format_exc())
         finally:
+            self.collect_running = False
             # After collector run, invoke a flush
             # method on each handler.
             for handler in self.handlers:
-                handler.flush()
+                handler._flush()

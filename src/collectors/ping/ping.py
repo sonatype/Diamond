@@ -23,6 +23,7 @@ We extract out the key after target_ and use it in the graphite node we push.
 import subprocess
 import diamond.collector
 import os
+from diamond.collector import str_to_bool
 
 
 class PingCollector(diamond.collector.Collector):
@@ -56,11 +57,13 @@ class PingCollector(diamond.collector.Collector):
                 metric_name = host.replace('.', '_')
 
                 if not os.access(self.config['bin'], os.X_OK):
+                    self.log.error("Path %s does not exist or is not executable"
+                                   % self.config['bin'])
                     return
 
                 command = [self.config['bin'], '-nq', '-c 1', host]
 
-                if self.config['use_sudo']:
+                if str_to_bool(self.config['use_sudo']):
                     command.insert(0, self.config['sudo_cmd'])
 
                 ping = subprocess.Popen(
@@ -70,11 +73,11 @@ class PingCollector(diamond.collector.Collector):
                 # Linux
                 if ping.startswith('rtt'):
                     ping = ping.split()[3].split('/')[0]
-                    metric_value = int(round(float(ping)))
+                    metric_value = float(ping)
                 # OS X
                 elif ping.startswith('round-trip '):
                     ping = ping.split()[3].split('/')[0]
-                    metric_value = int(round(float(ping)))
+                    metric_value = float(ping)
                 # Unknown
                 else:
                     metric_value = 10000

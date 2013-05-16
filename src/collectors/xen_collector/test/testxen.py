@@ -5,22 +5,15 @@
 from test import CollectorTestCase
 from test import get_collector_config
 from test import unittest
+from test import run_only
 from mock import Mock
 from mock import patch
 
 from diamond.collector import Collector
-from xen import XENCollector
+from xen_collector import XENCollector
 
 
 ###############################################################################
-
-def run_only(func, predicate):
-    if predicate():
-        return func
-    else:
-        def f(arg):
-            pass
-        return f
 
 
 def run_only_if_libvirt_is_available(func):
@@ -38,6 +31,9 @@ class TestXENCollector(CollectorTestCase):
         config = get_collector_config('XENCollector', {
         })
         self.collector = XENCollector(config, None)
+
+    def test_import(self):
+        self.assertTrue(XENCollector)
 
     @run_only_if_libvirt_is_available
     @patch('os.statvfs')
@@ -63,7 +59,7 @@ class TestXENCollector(CollectorTestCase):
 
         libvirt_m = Mock()
         libvirt_m.getInfo.return_value = ['x86_64', 48262, 8, 1200, 2, 1, 4, 1]
-        libvirt_m.listDomainsID.return_value = [2, 1, 4, 3]
+        libvirt_m.listDomainsID.return_value = [0, 2, 1, 4, 3]
 
         def lookupByIdMock(id):
             lookup = info(id)

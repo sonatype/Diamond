@@ -5,3 +5,6 @@ pymongo
 pyrabbit
 redis
 beanstalkc
+bernhard
+simplejson
+kitchen

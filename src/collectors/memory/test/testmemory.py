@@ -29,6 +29,9 @@ class TestMemoryCollector(CollectorTestCase):
 
         self.collector = MemoryCollector(config, None)
 
+    def test_import(self):
+        self.assertTrue(MemoryCollector)
+
     @patch('__builtin__.open')
     @patch('os.access', Mock(return_value=True))
     @patch.object(Collector, 'publish')
@@ -50,6 +53,7 @@ class TestMemoryCollector(CollectorTestCase):
             'Active': 10022168,
             'Dirty': 24748,
             'Inactive': 2524928,
+            'Shmem': 276,
             'SwapTotal': 262143996,
             'SwapFree': 262143996,
             'SwapCached': 0,

@@ -26,24 +26,6 @@ class NetworkCollector(diamond.collector.Collector):
 
     PROC = '/proc/net/dev'
 
-    MAX_VALUES = {
-        'rx_bytes':      diamond.collector.MAX_COUNTER,
-        'rx_packets':    diamond.collector.MAX_COUNTER,
-        'rx_errors':     diamond.collector.MAX_COUNTER,
-        'rx_drop':       diamond.collector.MAX_COUNTER,
-        'rx_fifo':       diamond.collector.MAX_COUNTER,
-        'rx_frame':      diamond.collector.MAX_COUNTER,
-        'rx_compressed': diamond.collector.MAX_COUNTER,
-        'rx_multicast':  diamond.collector.MAX_COUNTER,
-        'tx_bytes':      diamond.collector.MAX_COUNTER,
-        'tx_packets':    diamond.collector.MAX_COUNTER,
-        'tx_errors':     diamond.collector.MAX_COUNTER,
-        'tx_drop':       diamond.collector.MAX_COUNTER,
-        'tx_fifo':       diamond.collector.MAX_COUNTER,
-        'tx_frame':      diamond.collector.MAX_COUNTER,
-        'tx_compressed': diamond.collector.MAX_COUNTER,
-        'tx_multicast':  diamond.collector.MAX_COUNTER, }
-
     def get_default_config_help(self):
         config_help = super(NetworkCollector, self).get_default_config_help()
         config_help.update({
@@ -59,7 +41,7 @@ class NetworkCollector(diamond.collector.Collector):
         config = super(NetworkCollector, self).get_default_config()
         config.update({
             'path':         'network',
-            'interfaces':   ['eth', 'bond', 'em'],
+            'interfaces':   ['eth', 'bond', 'em', 'p1p'],
             'byte_unit':    ['bit', 'byte'],
             'greedy':       'true',
         })
@@ -80,7 +62,7 @@ class NetworkCollector(diamond.collector.Collector):
             # Build Regular Expression
             greed = ''
             if self.config['greedy'].lower() == 'true':
-                greed = '[0-9]+'
+                greed = '\S+'
 
             exp = ('^(?:\s*)((?:%s)%s):(?:\s*)'
                    + '(?P<rx_bytes>\d+)(?:\s*)'
@@ -127,7 +109,7 @@ class NetworkCollector(diamond.collector.Collector):
                 # Get Metric Value
                 metric_value = self.derivative(metric_name,
                                                long(v),
-                                               self.MAX_VALUES[s])
+                                               diamond.collector.MAX_COUNTER)
 
                 # Convert rx_bytes and tx_bytes
                 if s == 'rx_bytes' or s == 'tx_bytes':

@@ -3,6 +3,9 @@
 """
 Collects data from RabbitMQ through the admin interface
 
+#### Notes
+ * if two vhosts have the queues with the same name, the metrics will collide
+
 #### Dependencies
 
  * pyrabbit
@@ -53,10 +56,11 @@ class RabbitMQCollector(diamond.collector.Collector):
                                          self.config['user'],
                                          self.config['password'])
 
-            for queue in client.get_queues():
-                for key in queue:
-                    name = '{0}.{1}'.format('queues', queue['name'])
-                    self._publish_metrics(name, [], key, queue)
+            for vhost in client.get_all_vhosts():
+                for queue in client.get_queues(vhost=vhost['name']):
+                    for key in queue:
+                        name = '{0}.{1}'.format('queues', queue['name'])
+                        self._publish_metrics(name, [], key, queue)
 
             overview = client.get_overview()
             for key in overview:

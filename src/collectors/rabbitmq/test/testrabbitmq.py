@@ -5,6 +5,7 @@
 from test import CollectorTestCase
 from test import get_collector_config
 from test import unittest
+from test import run_only
 from mock import Mock
 from mock import patch
 
@@ -12,15 +13,6 @@ from diamond.collector import Collector
 from rabbitmq import RabbitMQCollector
 
 ################################################################################
-
-
-def run_only(func, predicate):
-    if predicate():
-        return func
-    else:
-        def f(arg):
-            pass
-        return f
 
 
 def run_only_if_pyrabbit_is_available(func):
@@ -42,11 +34,17 @@ class TestRabbitMQCollector(CollectorTestCase):
         })
         self.collector = RabbitMQCollector(config, None)
 
+    def test_import(self):
+        self.assertTrue(RabbitMQCollector)
+
     @run_only_if_pyrabbit_is_available
     @patch('pyrabbit.api.Client')
     @patch.object(Collector, 'publish')
     def test_should_publish_nested_keys(self, publish_mock, client_mock):
         client = Mock()
+        vhost_data = [
+            {'name': 'localhost'},
+        ]
         queue_data = {
             'more_keys': {'nested_key': 1},
             'key': 2,
@@ -59,12 +57,14 @@ class TestRabbitMQCollector(CollectorTestCase):
             'string': 'string',
         }
         client_mock.return_value = client
+        client.get_all_vhosts.return_value = vhost_data
         client.get_queues.return_value = [queue_data]
         client.get_overview.return_value = overview_data
 
         self.collector.collect()
 
-        client.get_queues.assert_called_once_with()
+        client.get_all_vhosts.assert_called_once_with()
+        client.get_queues.assert_called_once_with(vhost='localhost')
         client.get_overview.assert_called_once_with()
         metrics = {
             'queues.test_queue.more_keys.nested_key': 1,

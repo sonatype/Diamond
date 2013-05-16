@@ -16,14 +16,24 @@ no metrics are collected.
 
 #### Dependencies
 
- * [commands](http://docs.python.org/library/commands.html)
+ * [subprocess](http://docs.python.org/library/subprocess.html)
+ * [kitchen](http://packages.python.org/kitchen/index.html)
 
 """
 
 import diamond.collector
 import diamond.convertor
 import os
-import commands
+import sys
+# Get a subprocess capable of check_output
+if sys.version_info < (2, 7):
+    try:
+        from kitchen.pycompat27 import subprocess
+        subprocess  # workaround for pyflakes issue #13
+    except ImportError:
+        subprocess = None
+else:
+    import subprocess
 
 
 class UserScriptsCollector(diamond.collector.Collector):
@@ -50,6 +60,10 @@ class UserScriptsCollector(diamond.collector.Collector):
         return config
 
     def collect(self):
+        if subprocess is None:
+            self.log.error('Unable to import kitchen')
+            return {}
+
         scripts_path = self.config['scripts_path']
         if not os.access(scripts_path, os.R_OK):
             return None
@@ -60,15 +74,26 @@ class UserScriptsCollector(diamond.collector.Collector):
                 continue
             out = None
             self.log.debug("Executing %s" % absolutescriptpath)
-            stat, out = commands.getstatusoutput(absolutescriptpath)
-            if stat != 0:
-                self.log.error("%s return exit value %s; skipping" %
-                        (absolutescriptpath, stat))
+            try:
+                proc = subprocess.Popen([absolutescriptpath],
+                                        stdout=subprocess.PIPE,
+                                        stderr=subprocess.PIPE)
+                (out, err) = proc.communicate()
+            except subprocess.CalledProcessError, e:
+                self.log.error("%s error launching: %s; skipping" %
+                        (absolutescriptpath, e))
                 continue
+            if proc.returncode:
+                self.log.error("%s return exit value %s; skipping" %
+                               (absolutescriptpath, proc.returncode))
             if not out:
                 self.log.info("%s return no output" % absolutescriptpath)
                 continue
-            for line in out.split('\n'):
+            if err:
+                self.log.error("%s return error output: %s" %
+                               (absolutescriptpath, err))
+            # Use filter to remove empty lines of output
+            for line in filter(None, out.split('\n')):
                 name, value = line.split()
                 floatprecision = 0
                 if "." in value:

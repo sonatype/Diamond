@@ -11,6 +11,8 @@ The CPUCollector collects CPU utilization metric using /proc/stat.
 
 import diamond.collector
 import os
+import time
+from diamond.collector import str_to_bool
 
 try:
     import psutil
@@ -22,6 +24,8 @@ except ImportError:
 class CPUCollector(diamond.collector.Collector):
 
     PROC = '/proc/stat'
+    INTERVAL = 1
+
     MAX_VALUES = {
         'user': diamond.collector.MAX_COUNTER,
         'nice': diamond.collector.MAX_COUNTER,
@@ -38,6 +42,8 @@ class CPUCollector(diamond.collector.Collector):
     def get_default_config_help(self):
         config_help = super(CPUCollector, self).get_default_config_help()
         config_help.update({
+            'percore':  'Collect metrics per cpu core or just total',
+            'simple':   'only return aggregate CPU% metric',
         })
         return config_help
 
@@ -48,7 +54,10 @@ class CPUCollector(diamond.collector.Collector):
         config = super(CPUCollector, self).get_default_config()
         config.update({
             'enabled':  'True',
-            'path':     'cpu'
+            'path':     'cpu',
+            'percore':  'True',
+            'xenfix':   None,
+            'simple':   'False',
         })
         return config
 
@@ -56,7 +65,37 @@ class CPUCollector(diamond.collector.Collector):
         """
         Collector cpu stats
         """
+
+        def cpu_time_list():
+            """
+            get cpu time list
+            """
+            statFile = open(self.PROC, "r")
+            timeList = statFile.readline().split(" ")[2:6]
+            for i in range(len(timeList)):
+                timeList[i] = int(timeList[i])
+            statFile.close()
+            return timeList
+
+        def cpu_delta_time(interval):
+            """
+            Get before and after cpu times for usage calc
+            """
+            pre_check = cpu_time_list()
+            time.sleep(interval)
+            post_check = cpu_time_list()
+            for i in range(len(pre_check)):
+                post_check[i] -= pre_check[i]
+            return post_check
+
         if os.access(self.PROC, os.R_OK):
+
+            #If simple only return aggregate CPU% metric
+            if str_to_bool(self.config['simple']):
+                dt = cpu_delta_time(self.INTERVAL)
+                cpuPct = 100 - (dt[len(dt) - 1] * 100.00 / sum(dt))
+                self.publish('percent', str('%.4f' % cpuPct))
+                return True
 
             results = {}
             # Open file
@@ -72,6 +111,8 @@ class CPUCollector(diamond.collector.Collector):
 
                 if cpu == 'cpu':
                     cpu = 'total'
+                elif not str_to_bool(self.config['percore']):
+                    continue
 
                 results[cpu] = {}
 
@@ -99,15 +140,40 @@ class CPUCollector(diamond.collector.Collector):
             # Close File
             file.close()
 
+            metrics = {}
+
             for cpu in results.keys():
                 stats = results[cpu]
                 for s in stats.keys():
                     # Get Metric Name
                     metric_name = '.'.join([cpu, s])
-                    # Publish Metric Derivative
-                    self.publish(metric_name,
-                                 self.derivative(metric_name, long(stats[s]),
-                                                 self.MAX_VALUES[s]))
+                    # Get actual data
+                    metrics[metric_name] = self.derivative(metric_name,
+                                                         long(stats[s]),
+                                                         self.MAX_VALUES[s])
+
+            # Check for a bug in xen where the idle time is doubled for guest
+            # See https://bugzilla.redhat.com/show_bug.cgi?id=624756
+            if self.config['xenfix'] is None or self.config['xenfix'] == True:
+                if os.path.isdir('/proc/xen'):
+                    total = 0
+                    for metric_name in metrics.keys():
+                        if 'cpu0.' in metric_name:
+                            total += int(metrics[metric_name])
+                    if total > 110:
+                        self.config['xenfix'] = True
+                        for mname in metrics.keys():
+                            if '.idle' in mname:
+                                metrics[mname] = float(metrics[mname]) / 2
+                    elif total > 0:
+                        self.config['xenfix'] = False
+                else:
+                    self.config['xenfix'] = False
+
+            # Publish Metric Derivative
+            for metric_name in metrics.keys():
+                self.publish(metric_name,
+                             metrics[metric_name])
             return True
 
         elif psutil:

@@ -23,6 +23,9 @@ class TestOpenVPNCollector(CollectorTestCase):
 
         self.collector = OpenVPNCollector(config, None)
 
+    def test_import(self):
+        self.assertTrue(OpenVPNCollector)
+
     @patch.object(Collector, 'publish')
     def test_should_work_with_real_data(self, publish_mock):
         self.collector.collect()
@@ -38,6 +41,7 @@ class TestOpenVPNCollector(CollectorTestCase):
             'status.clients.d_example_org.bytes_tx': 11133831.000000,
             'status.clients.e_example_org.bytes_rx': 13090090.000000,
             'status.clients.e_example_org.bytes_tx': 13401853.000000,
+            'status.clients.connected': 5,
             'status.global.max_bcast-mcast_queue_length': 14.000000,
         }
 

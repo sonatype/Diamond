@@ -1,7 +1,6 @@
 #!/usr/bin/env python
+# coding=utf-8
 ###############################################################################
-
-from __future__ import with_statement
 
 import os
 import sys
@@ -35,6 +34,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
                                              'src')))
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__),
                                              'src', 'collectors')))
+
+
+def run_only(func, predicate):
+    if predicate():
+        return func
+    else:
+        def f(arg):
+            pass
+        return f
 
 
 def get_collector_config(key, value):
@@ -101,14 +109,20 @@ class CollectorTestCase(unittest.TestCase):
         return file
 
     def getFixture(self, fixture_name):
-        with open(self.getFixturePath(fixture_name), 'r') as f:
+        try:
+            f = open(self.getFixturePath(fixture_name), 'r')
             data = StringIO(f.read())
-        return data
+            return data
+        finally:
+            f.close()
 
     def getPickledResults(self, results_name):
-        with open(self.getFixturePath(results_name), 'r') as f:
+        try:
+            f = open(self.getFixturePath(results_name), 'r')
             data = pickle.load(f)
-        return data
+            return data
+        finally:
+            f.close()
 
     def setPickledResults(self, results_name, data):
         pickle.dump(data, open(self.getFixturePath(results_name), "w+b"))
@@ -117,34 +131,40 @@ class CollectorTestCase(unittest.TestCase):
         return self.assertPublished(mock, key, value, expected_value)
 
     def assertPublished(self, mock, key, value, expected_value=1):
-        calls = filter(lambda x: x[0][0] == key, mock.call_args_list)
+        if type(mock) is list:
+            for m in mock:
+                calls = (filter(lambda x: x[0][0] == key, m.call_args_list))
+                if len(calls) > 0:
+                    break
+        else:
+            calls = filter(lambda x: x[0][0] == key, mock.call_args_list)
 
         actual_value = len(calls)
-        expected_value = 1
         message = '%s: actual number of calls %d, expected %d' % (
             key, actual_value, expected_value)
 
         self.assertEqual(actual_value, expected_value, message)
 
-        actual_value = calls[0][0][1]
-        expected_value = value
-        precision = 0
+        if expected_value:
+            actual_value = calls[0][0][1]
+            expected_value = value
+            precision = 0
 
-        if isinstance(value, tuple):
-            expected_value, precision = expected_value
+            if isinstance(value, tuple):
+                expected_value, precision = expected_value
 
-        message = '%s: actual %r, expected %r' % (key,
-                                                  actual_value,
-                                                  expected_value)
-        #print message
+            message = '%s: actual %r, expected %r' % (key,
+                                                      actual_value,
+                                                      expected_value)
+            #print message
 
-        if precision is not None:
-            self.assertAlmostEqual(float(actual_value),
-                                   float(expected_value),
-                                   places=precision,
-                                   msg=message)
-        else:
-            self.assertEqual(actual_value, expected_value, message)
+            if precision is not None:
+                self.assertAlmostEqual(float(actual_value),
+                                       float(expected_value),
+                                       places=precision,
+                                       msg=message)
+            else:
+                self.assertEqual(actual_value, expected_value, message)
 
     def assertUnpublishedMany(self, mock, dict, expected_value=0):
         return self.assertPublishedMany(mock, dict, expected_value)
@@ -153,7 +173,11 @@ class CollectorTestCase(unittest.TestCase):
         for key, value in dict.iteritems():
             self.assertPublished(mock, key, value, expected_value)
 
-        mock.reset_mock()
+        if type(mock) is list:
+            for m in mock:
+                m.reset_mock()
+        else:
+            mock.reset_mock()
 
     def assertUnpublishedMetric(self, mock, key, value, expected_value=0):
         return self.assertPublishedMetric(mock, key, value, expected_value)
@@ -236,6 +260,7 @@ if __name__ == "__main__":
 
     # Disable log output for the unit tests
     log = logging.getLogger("diamond")
+    log.addHandler(logging.StreamHandler(sys.stderr))
     log.disabled = True
 
     # Initialize Options

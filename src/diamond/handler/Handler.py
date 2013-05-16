@@ -26,7 +26,6 @@ class Handler(object):
         """
         try:
             try:
-                self.log.debug("Running Handler %s locked" % (self))
                 self.lock.acquire()
                 self.process(metric)
             except Exception:
@@ -34,7 +33,6 @@ class Handler(object):
         finally:
             if self.lock.locked():
                 self.lock.release()
-            self.log.debug("Unlocked Handler %s" % (self))
 
     def process(self, metric):
         """
@@ -43,6 +41,20 @@ class Handler(object):
         Should be overridden in subclasses
         """
         raise NotImplementedError
+
+    def _flush(self):
+        """
+        Decorator for flushing handlers with an lock, catching exceptions
+        """
+        try:
+            try:
+                self.lock.acquire()
+                self.flush()
+            except Exception:
+                self.log.error(traceback.format_exc())
+        finally:
+            if self.lock.locked():
+                self.lock.release()
 
     def flush(self):
         """

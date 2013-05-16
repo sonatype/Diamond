@@ -28,6 +28,7 @@ seconds. This might be a bit excessive and put unnecessary load on the
 devices being polled. You may wish to change this to every 300 seconds. However
 you need modify your graphite data retentions to handle this properly.
 
+```
     # Options for SNMPInterfaceCollector
     path = interface
     interval = 60
@@ -43,6 +44,7 @@ you need modify your graphite data retentions to handle this properly.
     host = router1.example.com
     port = 161
     community = public
+```
 
 Note: If you modify the SNMPInterfaceCollector configuration, you will need to
 restart diamond.
@@ -72,18 +74,18 @@ class SNMPInterfaceCollector(parent_SNMPCollector):
     IF_MIB_NAME_OID = "1.3.6.1.2.1.31.1.1.1.1"
     IF_MIB_TYPE_OID = "1.3.6.1.2.1.2.2.1.3"
 
-    # A list of IF-MIB the 32bit counters to walk
+    # A list of IF-MIB 32bit counters to walk
     IF_MIB_GAUGE_OID_TABLE = {'ifInDiscards': "1.3.6.1.2.1.2.2.1.13",
                               'ifInErrors': "1.3.6.1.2.1.2.2.1.14",
                               'ifOutDiscards': "1.3.6.1.2.1.2.2.1.19",
                               'ifOutErrors': "1.3.6.1.2.1.2.2.1.20"}
 
     # A list of IF-MIB 64bit counters to talk
-    IF_MIB_COUNTER_OID_TABLE = {'ifInOctets': "1.3.6.1.2.1.31.1.1.1.6",
+    IF_MIB_COUNTER_OID_TABLE = {'ifHCInOctets': "1.3.6.1.2.1.31.1.1.1.6",
                                 'ifInUcastPkts': "1.3.6.1.2.1.31.1.1.1.7",
                                 'ifInMulticastPkts': "1.3.6.1.2.1.31.1.1.1.8",
                                 'ifInBroadcastPkts': "1.3.6.1.2.1.31.1.1.1.9",
-                                'ifOutOctets': "1.3.6.1.2.1.31.1.1.1.10",
+                                'ifHCOutOctets': "1.3.6.1.2.1.31.1.1.1.10",
                                 'ifOutUcastPkts': "1.3.6.1.2.1.31.1.1.1.11",
                                 'ifOutMulticastPkts': "1.3.6.1.2.1.31.1.1.1.12",
                                 'ifOutBroadcastPkts': "1.3.6.1.2.1.31.1.1.1.13"}
@@ -176,7 +178,7 @@ class SNMPInterfaceCollector(parent_SNMPCollector):
                 # Get Metric Name and Value
                 metricIfDescr = re.sub(r'\W', '_', ifName)
 
-                if counterName in ['ifInOctets', 'ifOutOctets']:
+                if counterName in ['ifHCInOctets', 'ifHCOutOctets']:
                     for unit in self.config['byte_unit']:
                         # Convert Metric
                         metricName = '.'.join([metricIfDescr,

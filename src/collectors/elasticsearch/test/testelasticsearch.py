@@ -2,8 +2,6 @@
 # coding=utf-8
 ################################################################################
 
-from __future__ import with_statement
-
 from test import CollectorTestCase
 from test import get_collector_config
 from test import unittest
@@ -23,11 +21,18 @@ class TestElasticSearchCollector(CollectorTestCase):
 
         self.collector = ElasticSearchCollector(config, None)
 
+    def test_import(self):
+        self.assertTrue(ElasticSearchCollector)
+
     @patch.object(Collector, 'publish')
     def test_should_work_with_real_data(self, publish_mock):
-        with patch('urllib2.urlopen', Mock(
-                return_value=self.getFixture('stats'))):
-            self.collector.collect()
+        returns = [self.getFixture('stats'), self.getFixture('indices_stats')]
+        urlopen_mock = patch('urllib2.urlopen', Mock(
+            side_effect=lambda *args: returns.pop(0)))
+
+        urlopen_mock.start()
+        self.collector.collect()
+        urlopen_mock.stop()
 
         metrics = {
             'http.current': 1,
@@ -35,6 +40,14 @@ class TestElasticSearchCollector(CollectorTestCase):
             'indices.docs.count': 11968062,
             'indices.docs.deleted': 2692068,
             'indices.datastore.size': 22724243633,
+
+            'indices._all.docs.count': 4,
+            'indices._all.docs.deleted': 0,
+            'indices._all.datastore.size': 2674,
+
+            'indices.test.docs.count': 4,
+            'indices.test.docs.deleted': 0,
+            'indices.test.datastore.size': 2674,
 
             'process.cpu.percent': 58,
 
@@ -46,6 +59,12 @@ class TestElasticSearchCollector(CollectorTestCase):
             'disk.reads.size': 1235387392,
             'disk.writes.count': 5808198,
             'disk.writes.size': 23287275520,
+
+            'thread_pool.generic.threads': 1,
+
+            'network.tcp.active_opens': 2299,
+
+            'jvm.mem.pools.CMS_Old_Gen.used': 530915016,
         }
 
         self.setDocExample(collector=self.collector.__class__.__name__,
@@ -55,9 +74,12 @@ class TestElasticSearchCollector(CollectorTestCase):
 
     @patch.object(Collector, 'publish')
     def test_should_fail_gracefully(self, publish_mock):
-        with patch('urllib2.urlopen', Mock(
-                return_value=self.getFixture('stats_blank'))):
-            self.collector.collect()
+        urlopen_mock = patch('urllib2.urlopen', Mock(
+                return_value=self.getFixture('stats_blank')))
+
+        urlopen_mock.start()
+        self.collector.collect()
+        urlopen_mock.stop()
 
         self.assertPublishedMany(publish_mock, {})
 

@@ -55,12 +55,12 @@ class Server(object):
                 configname = os.path.basename(filename)
                 handlername = configname.split('.')[0]
                 if handlername not in self.config['handlers']:
-                    self.config['handlers'][handlername] = configobj.ConfigObj()
+                    config['handlers'][handlername] = configobj.ConfigObj()
 
                 configfile = os.path.join(
                     config['server']['handlers_config_path'],
                     configname)
-                self.config['handlers'][handlername].merge(
+                config['handlers'][handlername].merge(
                     configobj.ConfigObj(configfile))
 
         self.config = config
@@ -166,7 +166,8 @@ class Server(object):
             elif (os.path.isfile(fpath)
                   and len(f) > 3
                   and f[-3:] == '.py'
-                  and f[0:4] != 'test'):
+                  and f[0:4] != 'test'
+                  and f[0] != '.'):
 
                 # Check filter
                 if filter and os.path.join(path, f) != filter:

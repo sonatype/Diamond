@@ -36,13 +36,15 @@ class GraphiteHandler(Handler):
         self.socket = None
 
         # Initialize Options
+        self.proto = self.config.get('proto', 'tcp').lower().strip()
         self.host = self.config['host']
-        self.port = int(self.config['port'])
-        self.timeout = int(self.config['timeout'])
-        if 'batch' in self.config:
-            self.batch = int(self.config['batch'])
-        else:
-            self.batch = 1
+        self.port = int(self.config.get('port', 2003))
+        self.timeout = int(self.config.get('timeout', 15))
+        self.batch_size = int(self.config.get('batch', 1))
+        self.max_backlog_multiplier = int(
+            self.config.get('max_backlog_multiplier', 5))
+        self.trim_backlog_multiplier = int(
+            self.config.get('trim_backlog_multiplier', 4))
         self.metrics = []
 
         # Connect
@@ -60,16 +62,18 @@ class GraphiteHandler(Handler):
         """
         # Append the data to the array as a string
         self.metrics.append(str(metric))
-        if len(self.metrics) >= self.batch:
-            self.log.info("GraphiteHandler: Sending metrics. Graphite batch "
-                          "size is %s." % (len(self.metrics)))
+        if len(self.metrics) >= self.batch_size:
             self._send()
 
     def flush(self):
         """Flush metrics in queue"""
-        self.log.info("GraphiteHandler: Flush invoked. Batch size is %s."
-                      % (len(self.metrics)))
         self._send()
+
+    def _send_data(self, data):
+        """
+        Try to send all data in buffer.
+        """
+        self.socket.sendall(data)
 
     def _send(self):
         """
@@ -77,27 +81,43 @@ class GraphiteHandler(Handler):
         """
         # Check to see if we have a valid socket. If not, try to connect.
         try:
-            if self.socket is None:
-                self.log.debug("GraphiteHandler: Socket is not connected. "
-                               "Reconnecting.")
-                self._connect()
-            # Send data to socket
-            self.socket.sendall("\n".join(self.metrics))
-            self.log.info("GraphiteHandler: Metrics sent.")
-        except Exception:
-            self._close()
-            self.log.error("GraphiteHandler: Error sending metrics.")
-            raise
+            try:
+                if self.socket is None:
+                    self.log.debug("GraphiteHandler: Socket is not connected. "
+                                   "Reconnecting.")
+                    self._connect()
+                if self.socket is None:
+                    self.log.debug("GraphiteHandler: Reconnect failed.")
+                else:
+                    # Send data to socket
+                    self._send_data(''.join(self.metrics))
+                    self.metrics = []
+            except Exception:
+                self._close()
+                self.log.error("GraphiteHandler: Error sending metrics.")
+                raise
         finally:
-            # Clear metrics no matter what the result
-            self.metrics = []
+            if len(self.metrics) >= (
+                self.batch_size * self.max_backlog_multiplier):
+                trim_offset = (self.batch_size
+                               * self.trim_backlog_multiplier * -1)
+                self.log.warn('GraphiteHandler: Trimming backlog. Removing'
+                              + ' oldest %d and keeping newest %d metrics',
+                              len(self.metrics) - abs(trim_offset),
+                              abs(trim_offset))
+                self.metrics = self.metrics[trim_offset:]
 
     def _connect(self):
         """
         Connect to the graphite server
         """
+        if (self.proto == 'udp'):
+            stream = socket.SOCK_DGRAM
+        else:
+            stream = socket.SOCK_STREAM
+
         # Create socket
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket = socket.socket(socket.AF_INET, stream)
         if socket is None:
             # Log Error
             self.log.error("GraphiteHandler: Unable to create socket.")
