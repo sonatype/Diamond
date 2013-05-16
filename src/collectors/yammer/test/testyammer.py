@@ -22,7 +22,7 @@ class TestYammerCollector(CollectorTestCase):
         self.collector = YammerCollector(config, None)
 
     def test_import(self):
-        self.assertTrue(DropwizardCollector)
+        self.assertTrue(YammerCollector)
 
     @patch.object(Collector, 'publish')
     def test_should_work_with_real_data(self, publish_mock):
