@@ -74,7 +74,6 @@ class YammerCollector(diamond.collector.Collector):
 
     def _sanitize(self, name):
         return name.replace(' ','_').replace('.','_').replace('-','_')
-
        
     def _flatten(self,di):
         stack = [('',di)]
