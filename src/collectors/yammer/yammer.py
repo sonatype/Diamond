@@ -52,7 +52,7 @@ class YammerCollector(diamond.collector.Collector):
         try:
             if username:
                 passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-                passman.add_password(None, self.config['url'], self.config['username', self.config['password'])
+                passman.add_password(None, self.config['url'], self.config['username'], self.config['password'])
                 urllib2.install_opener(urllib2.build_opener(urllib2.HTTPBasicAuthHandler(passman)))
             response = urllib2.urlopen(self.config['url'])
         except urllib2.HTTPError, err:
