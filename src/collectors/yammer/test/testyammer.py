@@ -12,16 +12,16 @@ from mock import patch
 
 from diamond.collector import Collector
 
-from dropwizard import DropwizardCollector
+from yammer import YammerCollector
 
 ################################################################################
 
 
-class TestDropwizardCollector(CollectorTestCase):
+class TestYammerCollector(CollectorTestCase):
     def setUp(self):
-        config = get_collector_config('DropwizardCollector', {})
+        config = get_collector_config('YammerCollector', {})
 
-        self.collector = DropwizardCollector(config, None)
+        self.collector = YammerCollector(config, None)
 
     @patch.object(Collector, 'publish')
     def test_should_work_with_real_data(self, publish_mock):
@@ -40,11 +40,11 @@ class TestDropwizardCollector(CollectorTestCase):
             'jvm.memory.heapCommitted': 1.15539968E8,
             'jvm.memory.heap_usage': 0.08770894441130528,
             'jvm.memory.non_heap_usage': 0.24903553182428534,
-            'jvm.memory.code_cache': 0.038289388020833336,
-            'jvm.memory.eden_space': 0.1918924383560846,
-            'jvm.memory.old_gen': 0.022127459689416828,
-            'jvm.memory.perm_gen': 0.32806533575057983,
-            'jvm.memory.survivor_space': 1.0,
+            'jvm.memory.memory_pool_usages.Code_Cache': 0.038289388020833336,
+            'jvm.memory.memory_pool_usages.PS_Eden_Space': 0.1918924383560846,
+            'jvm.memory.memory_pool_usages.PS_Old_Gen': 0.022127459689416828,
+            'jvm.memory.memory_pool_usages.PS_Perm_Gen': 0.32806533575057983,
+            'jvm.memory.memory_pool_usages.PS_Survivor_Space': 1.0,
             'jvm.daemon_thread_count': 10,
             'jvm.thread_count': 27,
             'jvm.fd_usage': 0.014892578125,
