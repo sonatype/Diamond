@@ -26,9 +26,7 @@ class YammerCollector(diamond.collector.Collector):
         config_help = super(YammerCollector,
                             self).get_default_config_help()
         config_help.update({
-            'host': '',
-            'port': '',
-            'path': '',
+            'url': 'URL from which to pull metrics',
         })
         return config_help
 
@@ -38,9 +36,8 @@ class YammerCollector(diamond.collector.Collector):
         """
         config = super(YammerCollector, self).get_default_config()
         config.update({
-            'host':     '127.0.0.1',
-            'port':     8081,
-            'path':     '/metrics',
+            'path':    'yammer',
+            'url':     'http://127.0.0.1:8081/metrics',
         })
         return config
 
@@ -48,10 +45,8 @@ class YammerCollector(diamond.collector.Collector):
         if json is None:
             self.log.error('Unable to import json')
             return {}
-        url = 'http://%s:%i%s' % (
-            self.config['host'], int(self.config['port']), self.config['path'])
         try:
-            response = urllib2.urlopen(url)
+            response = urllib2.urlopen(self.config['url'])
         except urllib2.HTTPError, err:
             self.log.error("%s: %s", url, err)
             return
