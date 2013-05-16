@@ -27,6 +27,8 @@ class YammerCollector(diamond.collector.Collector):
                             self).get_default_config_help()
         config_help.update({
             'url': 'URL from which to pull metrics',
+            'username': 'Username if basic auth is required',
+            'password': 'Password is basic auth is required',
         })
         return config_help
 
@@ -36,8 +38,10 @@ class YammerCollector(diamond.collector.Collector):
         """
         config = super(YammerCollector, self).get_default_config()
         config.update({
-            'path':    'yammer',
-            'url':     'http://127.0.0.1:8081/metrics',
+            'path':     'yammer',
+            'url':      'http://127.0.0.1:8081/metrics',
+            'username': '',
+            'password': '',
         })
         return config
 
@@ -46,6 +50,10 @@ class YammerCollector(diamond.collector.Collector):
             self.log.error('Unable to import json')
             return {}
         try:
+            if username:
+                passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+                passman.add_password(None, self.config['url'], self.config['username', self.config['password'])
+                urllib2.install_opener(urllib2.build_opener(urllib2.HTTPBasicAuthHandler(passman)))
             response = urllib2.urlopen(self.config['url'])
         except urllib2.HTTPError, err:
             self.log.error("%s: %s", url, err)
