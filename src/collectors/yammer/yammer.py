@@ -1,7 +1,7 @@
 # coding=utf-8
 
 """
-Collect metrics exposed by yammer metrics HTTP interface
+Collect [Yammer Metrics](http://metrics.codahale.com/) metrics via HTTP 
 
 #### Dependencies
 
