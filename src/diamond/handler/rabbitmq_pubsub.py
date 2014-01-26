@@ -5,7 +5,12 @@ Output the collected values to RabitMQ pub/sub channel
 """
 
 from Handler import Handler
-import pika
+
+try:
+    import pika
+    pika  # Pyflakes
+except ImportError:
+    pika = None
 
 
 class rmqHandler (Handler):
@@ -30,8 +35,41 @@ class rmqHandler (Handler):
         self.server = self.config['server']
         self.rmq_exchange = self.config['rmq_exchange']
 
+        if not pika:
+            self.log.error('pika import failed. Handler disabled')
+            return
+
         # Create rabbitMQ pub socket and bind
-        self._bind()
+        try:
+            self._bind()
+        except pika.exceptions.AMQPConnectionError:
+            self.log.error('Failed to bind to rabbitMQ pub socket')
+
+    def get_default_config_help(self):
+        """
+        Returns the help text for the configuration options for this handler
+        """
+        config = super(rmqHandler, self).get_default_config_help()
+
+        config.update({
+            'server': '',
+            'rmq_exchange': '',
+        })
+
+        return config
+
+    def get_default_config(self):
+        """
+        Return the default config for the handler
+        """
+        config = super(rmqHandler, self).get_default_config()
+
+        config.update({
+            'server': '127.0.0.1',
+            'rmq_exchange': 'diamond',
+        })
+
+        return config
 
     def _bind(self):
         """
@@ -46,13 +84,18 @@ class rmqHandler (Handler):
         """
           Destroy instance of the rmqHandler class
         """
-        self.connection.close()
+        try:
+            self.connection.close()
+        except AttributeError:
+            pass
 
     def process(self, metric):
         """
           Process a metric and send it to zmq pub socket
         """
         # Send the data as ......
+        if not pika:
+            return
 
         try:
             self.channel.basic_publish(exchange=self.rmq_exchange,

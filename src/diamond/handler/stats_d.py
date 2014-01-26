@@ -35,8 +35,12 @@ of this handler.
 """
 
 from Handler import Handler
-import statsd
 import logging
+try:
+    import statsd
+    statsd  # Pyflakes
+except ImportError:
+    statsd = None
 
 
 class StatsdHandler(Handler):
@@ -48,15 +52,47 @@ class StatsdHandler(Handler):
         # Initialize Handler
         Handler.__init__(self, config)
         logging.debug("Initialized statsd handler.")
+
+        if not statsd:
+            self.log.error('statsd import failed. Handler disabled')
+
         # Initialize Options
         self.host = self.config['host']
         self.port = int(self.config['port'])
-        self.batch_size = int(self.config.get('batch', 1))
+        self.batch_size = int(self.config['batch'])
         self.metrics = []
         self.old_values = {}
 
         # Connect
         self._connect()
+
+    def get_default_config_help(self):
+        """
+        Returns the help text for the configuration options for this handler
+        """
+        config = super(StatsdHandler, self).get_default_config_help()
+
+        config.update({
+            'host': '',
+            'port': '',
+            'batch': '',
+        })
+
+        return config
+
+    def get_default_config(self):
+        """
+        Return the default config for the handler
+        """
+        config = super(StatsdHandler, self).get_default_config()
+
+        config.update({
+            'host': '',
+            'port': 1234,
+            'batch': 1,
+        })
+
+        return config
 
     def process(self, metric):
         """
@@ -72,6 +108,8 @@ class StatsdHandler(Handler):
         """
         Send data to statsd. Fire and forget.  Cross fingers and it'll arrive.
         """
+        if not statsd:
+            return
         for metric in self.metrics:
 
             # Split the path into a prefix and a name
@@ -101,6 +139,8 @@ class StatsdHandler(Handler):
         """
         Connect to the statsd server
         """
+        if not statsd:
+            return
         # Create socket
         self.connection = statsd.Connection(
             host=self.host,

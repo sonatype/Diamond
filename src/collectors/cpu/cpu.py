@@ -44,6 +44,7 @@ class CPUCollector(diamond.collector.Collector):
         config_help.update({
             'percore':  'Collect metrics per cpu core or just total',
             'simple':   'only return aggregate CPU% metric',
+            'normalize': 'for cpu totals, divide by the number of CPUs',
         })
         return config_help
 
@@ -58,6 +59,7 @@ class CPUCollector(diamond.collector.Collector):
             'percore':  'True',
             'xenfix':   None,
             'simple':   'False',
+            'normalize': 'False',
         })
         return config
 
@@ -70,6 +72,7 @@ class CPUCollector(diamond.collector.Collector):
             """
             get cpu time list
             """
+
             statFile = open(self.PROC, "r")
             timeList = statFile.readline().split(" ")[2:6]
             for i in range(len(timeList)):
@@ -101,10 +104,12 @@ class CPUCollector(diamond.collector.Collector):
             # Open file
             file = open(self.PROC)
 
+            ncpus = -1  # dont want to count the 'cpu'(total) cpu.
             for line in file:
                 if not line.startswith('cpu'):
                     continue
 
+                ncpus += 1
                 elements = line.split()
 
                 cpu = elements[0]
@@ -148,13 +153,21 @@ class CPUCollector(diamond.collector.Collector):
                     # Get Metric Name
                     metric_name = '.'.join([cpu, s])
                     # Get actual data
-                    metrics[metric_name] = self.derivative(metric_name,
-                                                         long(stats[s]),
-                                                         self.MAX_VALUES[s])
+                    if (str_to_bool(self.config['normalize'])
+                            and cpu == 'total' and ncpus > 0):
+                        metrics[metric_name] = self.derivative(
+                            metric_name,
+                            long(stats[s]),
+                            self.MAX_VALUES[s]) / ncpus
+                    else:
+                        metrics[metric_name] = self.derivative(
+                            metric_name,
+                            long(stats[s]),
+                            self.MAX_VALUES[s])
 
             # Check for a bug in xen where the idle time is doubled for guest
             # See https://bugzilla.redhat.com/show_bug.cgi?id=624756
-            if self.config['xenfix'] is None or self.config['xenfix'] == True:
+            if self.config['xenfix'] is None or self.config['xenfix'] is True:
                 if os.path.isdir('/proc/xen'):
                     total = 0
                     for metric_name in metrics.keys():
@@ -176,7 +189,12 @@ class CPUCollector(diamond.collector.Collector):
                              metrics[metric_name])
             return True
 
-        elif psutil:
+        else:
+            if not psutil:
+                self.log.error('Unable to import psutil')
+                self.log.error('No cpu metrics retrieved')
+                return None
+
             cpu_time = psutil.cpu_times(True)
             total_time = psutil.cpu_times()
             for i in range(0, len(cpu_time)):
@@ -185,10 +203,11 @@ class CPUCollector(diamond.collector.Collector):
                              self.derivative(metric_name + '.user',
                                              cpu_time[i].user,
                                              self.MAX_VALUES['user']))
-                self.publish(metric_name + '.nice',
-                             self.derivative(metric_name + '.nice',
-                                             cpu_time[i].nice,
-                                             self.MAX_VALUES['nice']))
+                if hasattr(cpu_time[i], 'nice'):
+                    self.publish(metric_name + '.nice',
+                                 self.derivative(metric_name + '.nice',
+                                                 cpu_time[i].nice,
+                                                 self.MAX_VALUES['nice']))
                 self.publish(metric_name + '.system',
                              self.derivative(metric_name + '.system',
                                              cpu_time[i].system,
@@ -203,10 +222,11 @@ class CPUCollector(diamond.collector.Collector):
                          self.derivative(metric_name + '.user',
                                          total_time.user,
                                          self.MAX_VALUES['user']))
-            self.publish(metric_name + '.nice',
-                         self.derivative(metric_name + '.nice',
-                                         total_time.nice,
-                                         self.MAX_VALUES['nice']))
+            if hasattr(total_time, 'nice'):
+                self.publish(metric_name + '.nice',
+                             self.derivative(metric_name + '.nice',
+                                             total_time.nice,
+                                             self.MAX_VALUES['nice']))
             self.publish(metric_name + '.system',
                          self.derivative(metric_name + '.system',
                                          total_time.system,

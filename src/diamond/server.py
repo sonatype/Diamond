@@ -48,21 +48,6 @@ class Server(object):
         config = configobj.ConfigObj(configfile)
         config['configfile'] = self.config['configfile']
 
-        # Merge in handler config files into the main config
-        if 'handlers_config_path' in config['server']:
-            files = os.listdir(config['server']['handlers_config_path'])
-            for filename in files:
-                configname = os.path.basename(filename)
-                handlername = configname.split('.')[0]
-                if handlername not in self.config['handlers']:
-                    config['handlers'][handlername] = configobj.ConfigObj()
-
-                configfile = os.path.join(
-                    config['server']['handlers_config_path'],
-                    configname)
-                config['handlers'][handlername].merge(
-                    configobj.ConfigObj(configfile))
-
         self.config = config
 
     def load_handler(self, fqcn):
@@ -100,10 +85,18 @@ class Server(object):
                     # Merge Handler config section
                     handler_config.merge(self.config['handlers'][cls.__name__])
 
+                # Check for config file in config directory
+                configfile = os.path.join(
+                    self.config['server']['handlers_config_path'],
+                    cls.__name__) + '.conf'
+                if os.path.exists(configfile):
+                    # Merge Collector config file
+                    handler_config.merge(configobj.ConfigObj(configfile))
+
                 # Initialize Handler class
                 self.handlers.append(cls(handler_config))
 
-            except ImportError:
+            except (ImportError, SyntaxError):
                 # Log Error
                 self.log.debug("Failed to load handler %s. %s", h,
                                traceback.format_exc())
@@ -126,8 +119,12 @@ class Server(object):
         """
         Scan for and add paths to the include path
         """
-        # Add path to the system path
-        sys.path.append(path)
+        # Verify the path is valid
+        if not os.path.isdir(path):
+            return
+        # Add path to the system path, to avoid name clashes
+        # with mysql-connector for example ...
+        sys.path.insert(1, path)
         # Load all the files in path
         for f in os.listdir(path):
             # Are we a directory? If so process down the tree
@@ -191,7 +188,7 @@ class Server(object):
                 try:
                     # Import the module
                     mod = __import__(modname, globals(), locals(), ['*'])
-                except ImportError:
+                except (ImportError, SyntaxError):
                     # Log error
                     self.log.error("Failed to import module: %s. %s", modname,
                                    traceback.format_exc())
@@ -256,9 +253,9 @@ class Server(object):
                           c.__class__.__name__)
             return
 
-        if c.config['enabled'] != True:
-            self.log.warn("Skipped loading disabled Collector: %s",
-                          c.__class__.__name__)
+        if c.config['enabled'] is not True:
+            self.log.debug("Skipped loading disabled Collector: %s",
+                           c.__class__.__name__)
             return
 
         # Get collector schedule
@@ -312,6 +309,9 @@ class Server(object):
         self.running = True
 
         # Load handlers
+        if 'handlers_path' in self.config['server']:
+            handlers_path = self.config['server']['handlers_path']
+            self.load_include_path(handlers_path)
         self.load_handlers()
 
         # Load config
@@ -340,6 +340,9 @@ class Server(object):
         self.running = True
 
         # Load handlers
+        if 'handlers_path' in self.config['server']:
+            handlers_path = self.config['server']['handlers_path']
+            self.load_include_path(handlers_path)
         self.load_handlers()
 
         # Overrides collector config dir
@@ -350,8 +353,15 @@ class Server(object):
         self.load_config()
 
         # Load collectors
-        self.load_include_path(os.path.dirname(file))
-        collectors = self.load_collectors(os.path.dirname(file), file)
+        if os.path.dirname(file) == '':
+            tmp_path = self.config['server']['collectors_path']
+        else:
+            tmp_path = os.path.dirname(file)
+        self.load_include_path(tmp_path)
+        collectors = self.load_collectors(tmp_path, file)
+        for item in collectors.keys():
+            if not item.lower() in file.lower():
+                del collectors[item]
 
         # Setup Collectors
         for cls in collectors.values():

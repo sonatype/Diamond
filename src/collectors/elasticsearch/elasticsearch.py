@@ -10,6 +10,7 @@ Collect the elasticsearch stats for the local node
 """
 
 import urllib2
+import re
 
 try:
     import json
@@ -18,6 +19,8 @@ except ImportError:
     import simplejson as json
 
 import diamond.collector
+
+RE_LOGSTASH_INDEX = re.compile('^(.*)-\d\d\d\d\.\d\d\.\d\d$')
 
 
 class ElasticSearchCollector(diamond.collector.Collector):
@@ -32,6 +35,10 @@ class ElasticSearchCollector(diamond.collector.Collector):
             + " - jvm (JVM information) \n"
             + " - thread_pool (Thread pool information) \n"
             + " - indices (Individual index stats)\n",
+            'logstash_mode': "If 'indices' stats are gathered, remove "
+            + "the YYYY.MM.DD suffix from the index name "
+            + "(e.g. logstash-adm-syslog-2014.01.03) and use that "
+            + "as a bucket for all 'day' index stats.",
         })
         return config_help
 
@@ -45,6 +52,7 @@ class ElasticSearchCollector(diamond.collector.Collector):
             'port':     9200,
             'path':     'elasticsearch',
             'stats':    ['jvm', 'thread_pool', 'indices'],
+            'logstash_mode': False,
         })
         return config
 
@@ -53,7 +61,7 @@ class ElasticSearchCollector(diamond.collector.Collector):
             self.config['host'], int(self.config['port']), path)
         try:
             response = urllib2.urlopen(url)
-        except urllib2.HTTPError, err:
+        except Exception, err:
             self.log.error("%s: %s", url, err)
             return False
 
@@ -67,24 +75,56 @@ class ElasticSearchCollector(diamond.collector.Collector):
     def _copy_one_level(self, metrics, prefix, data, filter=lambda key: True):
         for key, value in data.iteritems():
             if filter(key):
-                metrics['%s.%s' % (prefix, key)] = value
+                metric_path = '%s.%s' % (prefix, key)
+                self._set_or_sum_metric(metrics, metric_path, value)
 
     def _copy_two_level(self, metrics, prefix, data, filter=lambda key: True):
         for key1, d1 in data.iteritems():
             self._copy_one_level(metrics, '%s.%s' % (prefix, key1), d1, filter)
 
     def _index_metrics(self, metrics, prefix, index):
-        if 'docs' in index:
-            metrics['%s.docs.count' % prefix] = index['docs']['count']
-            metrics['%s.docs.deleted' % prefix] = index['docs']['deleted']
+        if self.config['logstash_mode']:
+            """Remove the YYYY.MM.DD bit from logstash indices.
+            This way we keep using the same metric naming and not polute
+            our metrics system (e.g. Graphite) with new metrics every day."""
+            m = RE_LOGSTASH_INDEX.match(prefix)
+            if m:
+                prefix = m.group(1)
 
-        if 'store' in index:
-            metrics['%s.datastore.size' % prefix] = index[
-                'store']['size_in_bytes']
+                # keep a telly of the number of indexes
+                self._set_or_sum_metric(metrics,
+                                        '%s.indexes_in_group' % prefix, 1)
+
+        self._add_metric(metrics, '%s.docs.count' % prefix, index,
+                         ['docs', 'count'])
+        self._add_metric(metrics, '%s.docs.deleted' % prefix, index,
+                         ['docs', 'deleted'])
+        self._add_metric(metrics, '%s.datastore.size' % prefix, index,
+                         ['store', 'size_in_bytes'])
 
         # publish all 'total' and 'time_in_millis' stats
-        self._copy_two_level(metrics, prefix, index,
+        self._copy_two_level(
+            metrics, prefix, index,
             lambda key: key.endswith('total') or key.endswith('time_in_millis'))
+
+    def _add_metric(self, metrics, metric_path, data, data_path):
+        """If the path specified by data_path (a list) exists in data,
+        add to metrics.  Use when the data path may not be present"""
+        current_item = data
+        for path_element in data_path:
+            current_item = current_item.get(path_element)
+            if current_item is None:
+                return
+
+        self._set_or_sum_metric(metrics, metric_path, current_item)
+
+    def _set_or_sum_metric(self, metrics, metric_path, value):
+        """If we already have a datapoint for this metric, lets add
+        the value. This is used when the logstash mode is enabled."""
+        if metric_path in metrics:
+            metrics[metric_path] += value
+        else:
+            metrics[metric_path] = value
 
     def collect(self):
         if json is None:
@@ -121,17 +161,17 @@ class ElasticSearchCollector(diamond.collector.Collector):
         if 'cache' in indices:
             cache = indices['cache']
 
-            if 'bloom_size_in_bytes' in cache:
-                metrics['cache.bloom.size'] = cache['bloom_size_in_bytes']
-            if 'field_evictions' in cache:
-                metrics['cache.field.evictions'] = cache['field_evictions']
-            if 'field_size_in_bytes' in cache:
-                metrics['cache.field.size'] = cache['field_size_in_bytes']
+            self._add_metric(metrics, 'cache.bloom.size', cache,
+                             ['bloom_size_in_bytes'])
+            self._add_metric(metrics, 'cache.field.evictions', cache,
+                             ['field_evictions'])
+            self._add_metric(metrics, 'cache.field.size', cache,
+                             ['field_size_in_bytes'])
             metrics['cache.filter.count'] = cache['filter_count']
             metrics['cache.filter.evictions'] = cache['filter_evictions']
             metrics['cache.filter.size'] = cache['filter_size_in_bytes']
-            if 'id_cache_size_in_bytes' in cache:
-                metrics['cache.id.size'] = cache['id_cache_size_in_bytes']
+            self._add_metric(metrics, 'cache.id.size', cache,
+                             ['id_cache_size_in_bytes'])
 
         # elasticsearch >= 0.90RC2
         if 'filter_cache' in indices:
@@ -139,39 +179,46 @@ class ElasticSearchCollector(diamond.collector.Collector):
 
             metrics['cache.filter.evictions'] = cache['evictions']
             metrics['cache.filter.size'] = cache['memory_size_in_bytes']
-
-            if 'count' in cache:
-                metrics['cache.filter.count'] = cache['count']
+            self._add_metric(metrics, 'cache.filter.count', cache, ['count'])
 
         # elasticsearch >= 0.90RC2
         if 'id_cache' in indices:
             cache = indices['id_cache']
 
-            if 'memory_size_in_bytes' in cache:
-                metrics['cache.id.size'] = cache['memory_size_in_bytes']
+            self._add_metric(metrics, 'cache.id.size', cache,
+                             ['memory_size_in_bytes'])
 
         # elasticsearch >= 0.90
-        if 'field_data' in indices:
-            metrics['field_data.memory_size'] = indices['field_data'][
-                'memory_size']
+        if 'fielddata' in indices:
+            fielddata = indices['fielddata']
+            self._add_metric(metrics, 'fielddata.size', fielddata,
+                             ['memory_size_in_bytes'])
+            self._add_metric(metrics, 'fielddata.evictions', fielddata,
+                             ['evictions'])
 
         #
-        # process mem/cpu
-        process = data['process']
-        mem = process['mem']
-        metrics['process.cpu.percent'] = process['cpu']['percent']
-        metrics['process.mem.resident'] = mem['resident_in_bytes']
-        metrics['process.mem.share'] = mem['share_in_bytes']
-        metrics['process.mem.virtual'] = mem['total_virtual_in_bytes']
+        # process mem/cpu (may not be present, depending on access restrictions)
+        self._add_metric(metrics, 'process.cpu.percent', data,
+                         ['process', 'cpu', 'percent'])
+        self._add_metric(metrics, 'process.mem.resident', data,
+                         ['process', 'mem', 'resident_in_bytes'])
+        self._add_metric(metrics, 'process.mem.share', data,
+                         ['process', 'mem', 'share_in_bytes'])
+        self._add_metric(metrics, 'process.mem.virtual', data,
+                         ['process', 'mem', 'total_virtual_in_bytes'])
 
         #
-        # filesystem
+        # filesystem (may not be present, depending on access restrictions)
         if 'fs' in data:
             fs_data = data['fs']['data'][0]
-            metrics['disk.reads.count'] = fs_data['disk_reads']
-            metrics['disk.reads.size'] = fs_data['disk_read_size_in_bytes']
-            metrics['disk.writes.count'] = fs_data['disk_writes']
-            metrics['disk.writes.size'] = fs_data['disk_write_size_in_bytes']
+            self._add_metric(metrics, 'disk.reads.count', fs_data,
+                             ['disk_reads'])
+            self._add_metric(metrics, 'disk.reads.size', fs_data,
+                             ['disk_read_size_in_bytes'])
+            self._add_metric(metrics, 'disk.writes.count', fs_data,
+                             ['disk_writes'])
+            self._add_metric(metrics, 'disk.writes.size', fs_data,
+                             ['disk_write_size_in_bytes'])
 
         #
         # jvm
